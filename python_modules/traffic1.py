@@ -1,93 +1,51 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os
-import threading
-import time
-
 descriptors = list()
-Desc_Skel   = {}
-_Worker_Thread = None
-_Lock = threading.Lock() # synchronization lock
 
-class UpdateTrafficThread(threading.Thread):
-    '''update traffic'''
-
-    __slots__ = ( 'proc_file' )
-
-    def __init__(self, params):
-        threading.Thread.__init__(self)
-        self.running       = False
-        self.shuttingdown  = False
-        self.target_device = params["target_device"]
-        self.refresh_rate  = int(params["refresh_rate"])
-        self.proc_file = "/proc/net/dev"
-        self.stats_tab = {
-            "recv_bytes"  : 0,
-            "recv_pkts"   : 1,
-            "recv_errs"   : 2,
-            "recv_drops"  : 3,
-            "trans_bytes" : 8,
-            "trans_pkts"  : 9,
-            "trans_errs"  : 10,
-            "trans_drops" : 11,
-            }
-        self.stats         = {}
-
-    def shutdown(self):
-        self.shuttingdown = True
-        if not self.running:
-            return
-        self.join()
-
-    def run(self):
-        self.running = True
-
-        while not self.shuttingdown:
-            _Lock.acquire()
-            self.update_stats()
-            _Lock.release()
-
-            time.sleep(self.refresh_rate)
-
-        self.running = False
-
-    def update_stats(self):
-        f = open(self.proc_file, "r")
-        for l in f:
-            a = l.split(":")
-            dev = a[0].lstrip()
-            if dev == self.target_device:
-                _stats = a[1].split()
-                for name, index in self.stats_tab.iteritems():
-                    self.stats[name+'_'+self.target_device] = int(_stats[index])
-                break
-        return
-
-    def stats_of(self, name):
-        val = 0
-        if name in self.stats:
-            _Lock.acquire()
-            val = self.stats[name]
-            _Lock.release()
-        return val
-
-def create_desc(prop):
-    d = Desc_Skel.copy()
-    for k,v in prop.iteritems():
-        d[k] = v
-    return d
+PROC_FILE = "/proc/net/dev"
+STATS_FOR = {
+    "recv_bytes"  : 0,
+    "recv_pkts"   : 1,
+    "recv_errs"   : 2,
+    "recv_drops"  : 3,
+    "trans_bytes" : 8,
+    "trans_pkts"  : 9,
+    "trans_errs"  : 10,
+    "trans_drops" : 11,
+    }
 
 def traffic_stats(name):
-    return _Worker_Thread.stats_of(name)
+    type, target_device = name.rsplit("_",1)
+    v = stats_of(target_device)
+    if v:
+        return int(v[ STATS_FOR[type] ])
+    else:
+        return -1
+
+def stats_of(target_device):
+    f = open(PROC_FILE, "r")
+    for l in f:
+        a = l.split(":")
+        dev = a[0].lstrip()
+        if dev != target_device:
+            continue
+        return a[1].split()
+    return
 
 def metric_init(params):
-    global descriptors, Desc_Skel, _Worker_Thread
+    global descriptors
 
     print '[traffic1] Received the following parameters'
     print params
 
-    Desc_Skel = {
+    if "target_device" in params:
+        target_device = params["target_device"]
+    else:
+        target_device = "lo"
+
+
+    d0 = {
         'name'        : 'XXX',
         'call_back'   : traffic_stats,
         'time_max'    : 60,
@@ -99,45 +57,32 @@ def metric_init(params):
         'groups'      : 'network',
         }
 
-    if "refresh_rate" not in params:
-        params["refresh_rate"] = 10
-    if "target_device" not in params:
-        params["target_device"] = "lo"
-    target_device = params["target_device"]
-
-    _Worker_Thread = UpdateTrafficThread(params)
-    _Worker_Thread.start()
-
     # IP:HOSTNAME
     if "spoof_host" in params:
-        Desc_Skel["spoof_host"] = params["spoof_host"]
+        d0["spoof_host"] = params["spoof_host"]
 
-    descriptors.append( create_desc({
-                "name"        : 'trans_bytes_' + target_device,
-                "units"       : "bytes/sec",
-                "description" : 'transmitted bytes per sec',
-                }) )
-    descriptors.append( create_desc({
-                "name"        : 'recv_bytes_' + target_device,
-                "units"       : "bytes/sec",
-                "description" : 'received bytes per sec',
-                }) )
+    d = d0.copy()
+    d["name"]        = 'trans_bytes_' + target_device
+    d["units"]       = "bytes/sec"
+    d["description"] = 'transmitted bytes per sec'
+    descriptors.append(d)
+
+    d = d0.copy()
+    d["name"]        = 'recv_bytes_' + target_device
+    d["units"]       = "bytes/sec"
+    d["description"] = 'received bytes per sec'
+    descriptors.append(d)
 
     return descriptors
 
 def metric_cleanup():
     '''Clean up the metric module.'''
-    _Worker_Thread.shutdown()
+    pass
 
 if __name__ == '__main__':
-    try:
-        params = {'target_device': "bond0"}
-        metric_init(params)
-        while True:
-            for d in descriptors:
-                v = d['call_back'](d['name'])
-                print 'value for %s is %d' % (d['name'], v)
-            time.sleep(5)
-    except KeyboardInterrupt:
-        time.sleep(0.2)
-        os._exit(1)
+    params = {'target_device': "bond0"}
+    metric_init(params)
+    for d in descriptors:
+        v = d['call_back'](d['name'])
+        print 'value for %s is %d' % (d['name'], v)
+
