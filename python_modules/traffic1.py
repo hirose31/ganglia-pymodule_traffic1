@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import sys
 import os
 import threading
 import time
@@ -11,7 +12,6 @@ _Worker_Thread = None
 _Lock = threading.Lock() # synchronization lock
 
 class UpdateTrafficThread(threading.Thread):
-    '''update traffic'''
 
     __slots__ = ( 'proc_file' )
 
@@ -19,8 +19,13 @@ class UpdateTrafficThread(threading.Thread):
         threading.Thread.__init__(self)
         self.running       = False
         self.shuttingdown  = False
+        self.refresh_rate = 10
+        if "refresh_rate" in params:
+            self.refresh_rate = int(params["refresh_rate"])
+
         self.target_device = params["target_device"]
-        self.refresh_rate  = int(params["refresh_rate"])
+        self.metric       = {}
+
         self.proc_file = "/proc/net/dev"
         self.stats_tab = {
             "recv_bytes"  : 0,
@@ -32,7 +37,8 @@ class UpdateTrafficThread(threading.Thread):
             "trans_errs"  : 10,
             "trans_drops" : 11,
             }
-        self.stats         = {}
+        self.stats      = {}
+        self.stats_prev = {}
 
     def shutdown(self):
         self.shuttingdown = True
@@ -45,41 +51,46 @@ class UpdateTrafficThread(threading.Thread):
 
         while not self.shuttingdown:
             _Lock.acquire()
-            self.update_stats()
+            self.update_metric()
             _Lock.release()
-
             time.sleep(self.refresh_rate)
 
         self.running = False
 
-    def update_stats(self):
+    def update_metric(self):
         f = open(self.proc_file, "r")
         for l in f:
             a = l.split(":")
             dev = a[0].lstrip()
             if dev == self.target_device:
+                self.stats = {}
                 _stats = a[1].split()
                 for name, index in self.stats_tab.iteritems():
                     self.stats[name+'_'+self.target_device] = int(_stats[index])
+                self.stats["time"] = time.time()
+
+                if "time" in self.stats_prev:
+                    #print >>sys.stderr, "DO DIFF"
+                    d = self.stats.pop("time") - self.stats_prev["time"]
+                    #print >>sys.stderr, self.stats
+                    for name, cur in self.stats.iteritems():
+                        #print >>sys.stderr, "%f - %f" % (cur, self.stats_prev[name])
+                        self.metric[name] = float(cur - self.stats_prev[name])/d
+                        #print >>sys.stderr, "%s: %s" % (name, self.metric[name])
+
+                self.stats_prev = self.stats.copy()
+
                 break
+
         return
 
-    def stats_of(self, name):
+    def metric_of(self, name):
         val = 0
-        if name in self.stats:
+        if name in self.metric:
             _Lock.acquire()
-            val = self.stats[name]
+            val = self.metric[name]
             _Lock.release()
         return val
-
-def create_desc(prop):
-    d = Desc_Skel.copy()
-    for k,v in prop.iteritems():
-        d[k] = v
-    return d
-
-def traffic_stats(name):
-    return _Worker_Thread.stats_of(name)
 
 def metric_init(params):
     global descriptors, Desc_Skel, _Worker_Thread
@@ -89,12 +100,12 @@ def metric_init(params):
 
     Desc_Skel = {
         'name'        : 'XXX',
-        'call_back'   : traffic_stats,
+        'call_back'   : metric_of,
         'time_max'    : 60,
-        'value_type'  : 'uint',
+        'value_type'  : 'float',
+        'format'      : '%.3f',
         'units'       : 'XXX',
-        'slope'       : 'positive',
-        'format'      : '%d',
+        'slope'       : 'both',
         'description' : 'XXX',
         'groups'      : 'network',
         }
@@ -112,42 +123,50 @@ def metric_init(params):
     if "spoof_host" in params:
         Desc_Skel["spoof_host"] = params["spoof_host"]
 
-    descriptors.append( create_desc({
-                "name"        : 'recv_bytes_' + target_device,
+    descriptors.append(create_desc(Desc_Skel, {
+                "name"        : "recv_bytes_" + target_device,
                 "units"       : "bytes/sec",
-                "description" : 'received bytes per sec',
-                }) )
-    descriptors.append( create_desc({
-                "name"        : 'recv_pkts_' + target_device,
+                "description" : "received bytes per sec",
+                }))
+    descriptors.append(create_desc(Desc_Skel, {
+                "name"        : "recv_pkts_" + target_device,
                 "units"       : "pkts/sec",
-                "description" : 'received packets per sec',
-                }) )
-    descriptors.append( create_desc({
-                "name"        : 'recv_errs_' + target_device,
+                "description" : "received packets per sec",
+                }))
+    descriptors.append(create_desc(Desc_Skel, {
+                "name"        : "recv_errs_" + target_device,
                 "units"       : "pkts/sec",
-                "description" : 'received error packets per sec',
-                }) )
+                "description" : "received error packets per sec",
+                }))
 
-    descriptors.append( create_desc({
-                "name"        : 'trans_bytes_' + target_device,
+    descriptors.append(create_desc(Desc_Skel, {
+                "name"        : "trans_bytes_" + target_device,
                 "units"       : "bytes/sec",
-                "description" : 'transmitted bytes per sec',
-                }) )
-    descriptors.append( create_desc({
-                "name"        : 'trans_pkts_' + target_device,
+                "description" : "transmitted bytes per sec",
+                }))
+    descriptors.append(create_desc(Desc_Skel, {
+                "name"        : "trans_pkts_" + target_device,
                 "units"       : "pkts/sec",
-                "description" : 'transmitted packets per sec',
-                }) )
-    descriptors.append( create_desc({
-                "name"        : 'trans_errs_' + target_device,
+                "description" : "transmitted packets per sec",
+                }))
+    descriptors.append(create_desc(Desc_Skel, {
+                "name"        : "trans_errs_" + target_device,
                 "units"       : "pkts/sec",
-                "description" : 'transmitted error packets per sec',
-                }) )
+                "description" : "transmitted error packets per sec",
+                }))
 
     return descriptors
 
+def create_desc(skel, prop):
+    d = skel.copy()
+    for k,v in prop.iteritems():
+        d[k] = v
+    return d
+
+def metric_of(name):
+    return _Worker_Thread.metric_of(name)
+
 def metric_cleanup():
-    '''Clean up the metric module.'''
     _Worker_Thread.shutdown()
 
 if __name__ == '__main__':
@@ -157,8 +176,11 @@ if __name__ == '__main__':
         while True:
             for d in descriptors:
                 v = d['call_back'](d['name'])
-                print 'value for %s is %d' % (d['name'], v)
+                print ('value for %s is '+d['format']) % (d['name'],  v)
             time.sleep(5)
     except KeyboardInterrupt:
         time.sleep(0.2)
+        os._exit(1)
+    except StandardError:
+        print sys.exc_info()[0]
         os._exit(1)
