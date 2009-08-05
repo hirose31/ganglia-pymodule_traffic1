@@ -7,7 +7,5 @@ ganglia's net_module, traffic1 does handle only one network device.
 
 example
 ---------------
-I want to send traffic on tagged VLAN (bond0.2).
-
-see conf.d/traffic1.conf
+See conf.d/traffic1.conf, to send traffic on tagged VLAN (bond0.2).
 

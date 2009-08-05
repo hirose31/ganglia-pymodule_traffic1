@@ -113,14 +113,35 @@ def metric_init(params):
         Desc_Skel["spoof_host"] = params["spoof_host"]
 
     descriptors.append( create_desc({
+                "name"        : 'recv_bytes_' + target_device,
+                "units"       : "bytes/sec",
+                "description" : 'received bytes per sec',
+                }) )
+    descriptors.append( create_desc({
+                "name"        : 'recv_pkts_' + target_device,
+                "units"       : "pkts/sec",
+                "description" : 'received packets per sec',
+                }) )
+    descriptors.append( create_desc({
+                "name"        : 'recv_errs_' + target_device,
+                "units"       : "pkts/sec",
+                "description" : 'received error packets per sec',
+                }) )
+
+    descriptors.append( create_desc({
                 "name"        : 'trans_bytes_' + target_device,
                 "units"       : "bytes/sec",
                 "description" : 'transmitted bytes per sec',
                 }) )
     descriptors.append( create_desc({
-                "name"        : 'recv_bytes_' + target_device,
-                "units"       : "bytes/sec",
-                "description" : 'received bytes per sec',
+                "name"        : 'trans_pkts_' + target_device,
+                "units"       : "pkts/sec",
+                "description" : 'transmitted packets per sec',
+                }) )
+    descriptors.append( create_desc({
+                "name"        : 'trans_errs_' + target_device,
+                "units"       : "pkts/sec",
+                "description" : 'transmitted error packets per sec',
                 }) )
 
     return descriptors
@@ -131,7 +152,7 @@ def metric_cleanup():
 
 if __name__ == '__main__':
     try:
-        params = {'target_device': "bond0"}
+        params = {'target_device': "eth0"}
         metric_init(params)
         while True:
             for d in descriptors:
