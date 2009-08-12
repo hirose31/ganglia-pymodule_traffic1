@@ -70,20 +70,19 @@ class UpdateTrafficThread(threading.Thread):
             dev = a[0].lstrip()
             if dev != self.target_device: continue
 
+            dprint("%s", ">>update_metric");
             self.stats = {}
             _stats = a[1].split()
             for name, index in self.stats_tab.iteritems():
                 self.stats[name+'_'+self.target_device] = int(_stats[index])
             self.stats["time"] = time.time()
+            dprint("%s", self.stats)
 
             if "time" in self.stats_prev:
-                dprint("%s", "DO DIFF")
-                d = self.stats.pop("time") - self.stats_prev["time"]
-                dprint("%s", self.stats)
+                dprint("%s: %d = %d - %d", "DO DIFF", self.stats["time"]-self.stats_prev["time"], self.stats["time"], self.stats_prev["time"])
+                d = self.stats["time"] - self.stats_prev["time"]
                 for name, cur in self.stats.iteritems():
-                    dprint("%f - %f", cur, self.stats_prev[name])
                     self.metric[name] = float(cur - self.stats_prev[name])/d
-                    dprint("%s: %s", name, self.metric[name])
 
             self.stats_prev = self.stats.copy()
             break
