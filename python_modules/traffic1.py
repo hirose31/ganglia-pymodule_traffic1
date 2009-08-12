@@ -11,6 +11,12 @@ Desc_Skel   = {}
 _Worker_Thread = None
 _Lock = threading.Lock() # synchronization lock
 
+Debug = False
+
+def dprint(f, *v):
+    if Debug:
+        print >>sys.stderr, "DEBUG: "+f % v
+
 class UpdateTrafficThread(threading.Thread):
 
     __slots__ = ( 'proc_file' )
@@ -62,25 +68,25 @@ class UpdateTrafficThread(threading.Thread):
         for l in f:
             a = l.split(":")
             dev = a[0].lstrip()
-            if dev == self.target_device:
-                self.stats = {}
-                _stats = a[1].split()
-                for name, index in self.stats_tab.iteritems():
-                    self.stats[name+'_'+self.target_device] = int(_stats[index])
-                self.stats["time"] = time.time()
+            if dev != self.target_device: continue
 
-                if "time" in self.stats_prev:
-                    #print >>sys.stderr, "DO DIFF"
-                    d = self.stats.pop("time") - self.stats_prev["time"]
-                    #print >>sys.stderr, self.stats
-                    for name, cur in self.stats.iteritems():
-                        #print >>sys.stderr, "%f - %f" % (cur, self.stats_prev[name])
-                        self.metric[name] = float(cur - self.stats_prev[name])/d
-                        #print >>sys.stderr, "%s: %s" % (name, self.metric[name])
+            self.stats = {}
+            _stats = a[1].split()
+            for name, index in self.stats_tab.iteritems():
+                self.stats[name+'_'+self.target_device] = int(_stats[index])
+            self.stats["time"] = time.time()
 
-                self.stats_prev = self.stats.copy()
+            if "time" in self.stats_prev:
+                dprint("%s", "DO DIFF")
+                d = self.stats.pop("time") - self.stats_prev["time"]
+                dprint("%s", self.stats)
+                for name, cur in self.stats.iteritems():
+                    dprint("%f - %f", cur, self.stats_prev[name])
+                    self.metric[name] = float(cur - self.stats_prev[name])/d
+                    dprint("%s: %s", name, self.metric[name])
 
-                break
+            self.stats_prev = self.stats.copy()
+            break
 
         return
 
@@ -93,7 +99,7 @@ class UpdateTrafficThread(threading.Thread):
         return val
 
 def metric_init(params):
-    global descriptors, Desc_Skel, _Worker_Thread
+    global descriptors, Desc_Skel, _Worker_Thread, Debug
 
     print '[traffic1] Received the following parameters'
     print params
@@ -112,6 +118,9 @@ def metric_init(params):
 
     if "refresh_rate" not in params:
         params["refresh_rate"] = 10
+    if "debug" in params:
+        Debug = params["debug"]
+    dprint("%s", "Debug mode on")
     if "target_device" not in params:
         params["target_device"] = "lo"
     target_device = params["target_device"]
@@ -171,7 +180,10 @@ def metric_cleanup():
 
 if __name__ == '__main__':
     try:
-        params = {'target_device': "eth0"}
+        params = {
+            "target_device": "eth0",
+            "debug"        : True,
+            }
         metric_init(params)
         while True:
             for d in descriptors:
